@@ -1,0 +1,3 @@
+Screen { layout: horizontal; }
+#sidebar { width: 30; padding: 1; border-right: solid $accent; }
+Button { width: 100%; margin-bottom: 1; }

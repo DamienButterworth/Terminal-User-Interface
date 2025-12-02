@@ -1,0 +1,20 @@
+github:
+  active-team-members:
+  - DamienButterworth
+  - vajarova
+  - ericohwotu
+  - justega247
+  - JSquires91
+  - Arei1997
+  - coolkrish04
+  - jamie2210
+  - rakeshshamantula
+  - AnushTagvoryan
+  - ajan-farah
+  - deepatel2511
+  organisation: hmrc
+  team: ctc-traders
+  ignored-repositories:
+  - testing
+local:
+  active-working-directory: /Users/damien.butterworth/WORKSPACE

@@ -1,0 +1,22 @@
+[project]
+name = "custom-tools"
+version = "0.1.0"
+description = "Personal custom-tools to increase productivity"
+authors = [
+    { name="Damien Butterworth" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
