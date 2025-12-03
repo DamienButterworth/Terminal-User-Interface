@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual import on, work
@@ -9,6 +11,9 @@ from config import YAMLConfig
 from github import LocalGithubRequests, GitHubRepoRequests
 from github.team_requests import GitHubTeamRequests
 from .json_render import JsonRender
+
+from textual_fspicker import SelectDirectory
+
 
 if TYPE_CHECKING:
     pass
@@ -32,12 +37,75 @@ class GithubContent(VerticalScroll):
         yield Button("Team Pull Requests", id="team_pull_requests")
         yield Button("List Team Branches", id="team_branches")
         yield Button("Clone Team Repositories", id="clone_team_repos")
+        yield Button("Update local repositories", id="update_local_repos")
 
     async def notify_and_run(self, message, func, *args, **kwargs):
         self.app.notify(message, timeout=2)
         return await asyncio.to_thread(func, *args, **kwargs)
 
-    async def clone_team_repos_parallel(self):
+    def update_single_repo(self, repo_path: Path):
+        def run(*args):
+            return subprocess.run(
+                ["git", *args],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+
+        results = {
+            "stash": run("stash", "-u"),
+            "checkout": run("checkout", "main"),
+            "pull": run("pull"),
+        }
+
+        return repo_path.name, results
+
+    async def update_all_repos(self, directory: str):
+        root_path = Path(directory)
+
+        repos = [
+            p for p in root_path.iterdir()
+            if p.is_dir() and (p / ".git").exists()
+        ]
+
+        if not repos:
+            self.app.notify("No Git repositories found.", severity="warning")
+            return
+
+        self.app.notify(f"Updating {len(repos)} repositories…", severity="information")
+
+        async def update_one(repo_path):
+            repo_name = repo_path.name
+            self.app.notify(f"Updating {repo_name}…", timeout=2)
+
+            name, results = await asyncio.to_thread(self.update_single_repo, repo_path)
+
+            # Check success
+            pull_ok = results["pull"].returncode == 0
+
+            if pull_ok:
+                self.app.notify(f"✓ {repo_name} updated successfully", severity="information", timeout=2)
+            else:
+                self.app.notify(
+                    f"⚠ {repo_name} update had issues:\n{results['pull'].stderr}",
+                    severity="warning",
+                    timeout=4,
+                )
+
+            return pull_ok
+
+        results = await asyncio.gather(*(update_one(repo) for repo in repos))
+
+        success = sum(1 for r in results if r)
+        failed = len(repos) - success
+
+        self.app.notify(
+            f"Update complete: {success} OK, {failed} failed.",
+            severity="information" if failed == 0 else "warning",
+            timeout=4
+        )
+
+    async def clone_team_repos_parallel(self, directory):
         repos = await self.__get_team_repo_names()
 
         semaphore = asyncio.Semaphore(4)
@@ -46,10 +114,11 @@ class GithubContent(VerticalScroll):
             async with semaphore:
                 self.app.notify(
                     f"Cloning {repo}... ({index}/{len(repos)})",
+
                     severity="information",
                     timeout=2
                 )
-                await asyncio.to_thread(self.lgr.clone_repo, repo, ".", "main")
+                await asyncio.to_thread(self.lgr.clone_repo, repo, directory, "main")
 
         tasks = [
             clone_one(repo, i)
@@ -123,6 +192,15 @@ class GithubContent(VerticalScroll):
                     }
                     data.append(modified)
                 self.app.show_in_content(JsonRender(data, "team_pull_requests", {None: "repository", "pull requests": "title"}))
-
             case "clone_team_repos":
-                await self.clone_team_repos_parallel()
+                directory = await (self.app.push_screen_wait(SelectDirectory()))
+                if directory:
+                    await self.clone_team_repos_parallel(directory)
+                else:
+                    self.app.notify("No directory selected")
+            case "update_local_repos":
+                directory = await (self.app.push_screen_wait(SelectDirectory()))
+                if directory:
+                    await self.update_all_repos(directory)
+                else:
+                    self.app.notify("No directory selected")
