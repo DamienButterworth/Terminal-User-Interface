@@ -5,7 +5,7 @@ from textual import on, work
 from textual.containers import VerticalScroll
 from textual.widgets import Button
 
-from config import YAMLConfig, Logger
+from config import YAMLConfig
 from github import LocalGithubRequests, GitHubRepoRequests
 from github.team_requests import GitHubTeamRequests
 from .json_render import JsonRender
@@ -64,17 +64,19 @@ class GithubContent(VerticalScroll):
         )
 
     async def __get_team_repo_names(self):
+
         team_repo_ghr = await self.notify_and_run(
             f"Retrieving repositories for team: {self.github_config.team}",
             self.gtr.get_team_repos
         )
-        repos = [repo["name"] for repo in team_repo_ghr.data]
 
-        if not repos:
+        repo_names = [repo["name"] for repo in team_repo_ghr.data]
+
+        if not repo_names:
             self.app.notify("No repositories found.", severity="warning")
             return []
         else:
-            return repos
+            return repo_names
 
     @on(Button.Pressed)
     @work
@@ -107,7 +109,14 @@ class GithubContent(VerticalScroll):
                 data = []
                 for repo in repo_names:
                     grr = GitHubRepoRequests(self.github_config.organisation, repo)
-                    result = await self.notify_and_run(f"Retrieving pull requests for repository: {repo}", grr.list_pull_requests)
+                    result = await self.notify_and_run(
+                        f"Retrieving pull requests for repository: {repo}",
+                        grr.list_pull_requests
+                    )
+
+                    if not result.data:
+                        continue
+
                     modified = {
                         "repository": repo,
                         "pull requests": result.data

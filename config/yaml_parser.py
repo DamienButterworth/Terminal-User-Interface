@@ -19,6 +19,7 @@ class YAMLConfig:
             organisation=github_data.get("organisation", ""),
             team=github_data.get("team", ""),
             ignored_repositories=github_data.get("ignored-repositories", []),
+            include_archived_repositories=github_data.get("include_archived_repositories", [])
         )
 
     def __get_local_config(self) -> "LocalConfig":

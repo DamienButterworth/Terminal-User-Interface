@@ -1,8 +1,10 @@
+from config import YAMLConfig
 from .client import GitHubClient
 
 class GitHubTeamRequests:
     def __init__(self, organisation: str, team_slug: str):
         self.client = GitHubClient()
+        self.config = YAMLConfig().config.github
         self.organisation = organisation
         self.team_slug = team_slug
 
@@ -13,7 +15,13 @@ class GitHubTeamRequests:
         return self.client.get(f"/orgs/{self.organisation}/teams/{self.team_slug}/members")
 
     def get_team_repos(self):
-        return self.client.get(f"/orgs/{self.organisation}/teams/{self.team_slug}/repos")
+        github_response = (
+            self.client.get(f"/orgs/{self.organisation}/teams/{self.team_slug}/repos")).filter(lambda r: r["name"] not in self.config.ignored_repositories)
+
+        if not self.config.include_archived_repositories:
+           return github_response.filter(lambda r: r["archived"] is False)
+        else:
+            return github_response
 
     def add_team_member(self, username: str, role="member"):
         data = {"role": role}

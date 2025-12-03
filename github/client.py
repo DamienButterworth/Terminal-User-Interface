@@ -54,6 +54,16 @@ class GitHubResponse:
             return GitHubResponse([item.get(field) for item in self.data if isinstance(item, dict)])
         return GitHubResponse(None)
 
+    def filter(self, predicate):
+        if isinstance(self.data, list):
+            return GitHubResponse([item for item in self.data if predicate(item)])
+        return GitHubResponse(None)
+
+    def filter_not(self, predicate):
+        if isinstance(self.data, list):
+            return GitHubResponse([item for item in self.data if not predicate(item)])
+        return GitHubResponse(None)
+
     def head(self):
         if isinstance(self.data, list) and self.data:
             return GitHubResponse(self.data[0])

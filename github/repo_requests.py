@@ -1,7 +1,9 @@
+from config import YAMLConfig
 from .client import GitHubClient
 
 class GitHubRepoRequests:
     def __init__(self, organisation: str, repo: str):
+        self.config = YAMLConfig().config.github
         self.client = GitHubClient()
         self.repo = repo
         self.organisation = organisation
@@ -10,9 +12,11 @@ class GitHubRepoRequests:
         return self.client.get(f"/repos/{self.client}/{self.repo}")
 
     def list_pull_requests(self, state: str = "open"):
-        return self.client.get(
+        result = self.client.get(
             f"/repos/{self.organisation}/{self.repo}/pulls", params={"state": state}
         )
+
+        return result.filter(lambda r: r["user"]["login"] in self.config.active_team_members)
 
     def get_pull_request(self, pr_number: int):
         return self.client.get(

@@ -14,7 +14,6 @@ github:
   - deepatel2511
   organisation: hmrc
   team: ctc-traders
-  ignored-repositories:
-  - testing
+  ignored-repositories: []
 local:
   active-working-directory: /Users/damien.butterworth/WORKSPACE

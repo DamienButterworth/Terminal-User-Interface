@@ -1,4 +1,4 @@
-from textual.widgets import Static, Label, Input, TextArea, Button
+from textual.widgets import Static, Label, Input, TextArea, Button, Checkbox
 
 from config import YAMLConfig
 
@@ -45,6 +45,17 @@ class SettingsContent(Static):
         yield TextArea(
             "\n".join(self.config.config.github.ignored_repositories),
             id="ignored_repos",
+        )
+
+        yield Label("Include Archived Repositories", classes="title")
+        yield Label(
+            "Whether to include archived repositories when making GitHub API requests.",
+            classes="description",
+        )
+        yield Checkbox(
+            "Include archived repos",
+            id="include_archived",
+            value=self.config.config.github.include_archived_repositories,
         )
 
         yield Label("Local Settings", classes="section")

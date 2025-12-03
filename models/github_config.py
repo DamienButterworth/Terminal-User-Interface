@@ -7,3 +7,4 @@ class GithubConfig:
     organisation: str
     team: str
     ignored_repositories: List[str]
+    include_archived_repositories: bool
