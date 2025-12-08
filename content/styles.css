@@ -1,3 +1,24 @@
 Screen { layout: horizontal; }
 #sidebar { width: 30; padding: 1; border-right: solid $accent; }
 Button { width: 100%; margin-bottom: 1; }
+
+MultiFileDiffViewer {
+    width: 100%;
+    height: 100%;
+}
+
+#file_list_container {
+    width: 30%;
+    min-width: 25;
+}
+
+#file_list {
+    width: 100%;
+}
+
+#diff_panel {
+    width: 70%;
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+}

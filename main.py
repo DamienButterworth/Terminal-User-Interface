@@ -3,7 +3,9 @@ from textual.containers import Vertical, Container
 from textual.widgets import Button
 
 from content.github import GithubContent
+from content.library_upgrade import LibraryUpgradeContent
 from content.local import LocalContent
+from content.search_replace import SearchReplaceContent
 from content.settings import SettingsContent
 
 from config import YAMLConfig
@@ -26,6 +28,8 @@ class SidebarApp(App):
             yield Button("GitHub", id="github")
             yield Button("Local", id="local")
             yield Button("Settings", id="settings")
+            yield Button("Search & Replace", id="search_replace")
+            yield Button("Library Upgrade", id="library_upgrade")
         yield MainContent(HomeContent(), id="content")
 
     def show_in_content(self, *widgets):
@@ -42,6 +46,10 @@ class SidebarApp(App):
                 self.show_in_content(SettingsContent(config))
             case "local":
                 self.show_in_content(LocalContent())
+            case "search_replace":
+                self.show_in_content(SearchReplaceContent())
+            case "library_upgrade":
+                self.show_in_content(LibraryUpgradeContent())
 
 
 if __name__ == "__main__":
