@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Dict, Optional, List
 
 from textual import on, work
 from textual.containers import VerticalScroll
-from textual.widgets import Label, Button, Input, Checkbox
+from textual.widgets import Label, Button, TextArea, Checkbox
 from textual_fspicker import SelectDirectory
 
 from .multi_file_diff_viewer import MultiFileDiffViewer
@@ -16,49 +16,81 @@ if TYPE_CHECKING:
     from main import ContentRouter
 
 
-# -------------------------
-# Version helpers
-# -------------------------
+# ---------------------------------------------------------------------
+# Version helper
+# ---------------------------------------------------------------------
 
 def parse_version(v: str) -> tuple[int, int, int]:
     v = v.split("-")[0]
     parts = v.split(".")
     nums = []
-
     for p in parts:
         if p.isdigit():
             nums.append(int(p))
         else:
             m = re.match(r"(\d+)", p)
             nums.append(int(m.group(1)) if m else 0)
-
     while len(nums) < 3:
         nums.append(0)
-
     return tuple(nums[:3])
 
 
-# -------------------------
-# Tokeniser
-# -------------------------
+# ---------------------------------------------------------------------
+# Lossless search + replace helper
+# ---------------------------------------------------------------------
 
-TOKEN_PATTERN = re.compile(
-    r"""
-        "[^"]*"                |
-        '[^']*'                |
-        [%(){}\[\],=]          |
-        [A-Za-z0-9._:-]+
-    """,
-    re.VERBOSE,
-)
+def lossless_upgrade(original: str, group: str, artifact: str,
+                     new_version: str, threshold_enabled: bool) -> tuple[str, bool]:
+    """
+    Perform lossless (whitespace-preserving) version upgrades without touching formatting.
+    Returns (modified_text, upgraded_bool)
+    """
 
-def tokenize(s: str) -> List[str]:
-    return TOKEN_PATTERN.findall(s)
+    # Regex to match EXACT dependency including all surrounding whitespace
+    # Example matched:
+    #   "org.mockito"   %   "mockito-core"   %   "5.20.0"
+    pattern = re.compile(
+        rf'("{re.escape(group)}"\s*%%?\s*"{re.escape(artifact)}"\s*%\s*)"([^"]+)"'
+    )
+
+    modified = original
+    upgraded_any = False
+    last_end = 0
+    result_parts = []
+
+    for m in pattern.finditer(original):
+        before = original[last_end:m.start()]
+        result_parts.append(before)
+
+        full_prefix = m.group(1)
+        old_version = m.group(2)
+
+        old_tuple = parse_version(old_version)
+        new_tuple = parse_version(new_version)
+
+        # Threshold check
+        if threshold_enabled and old_tuple > new_tuple:
+            # Keep original
+            result_parts.append(m.group(0))
+        else:
+            # Upgrade ONLY the version literal — preserve formatting
+            result_parts.append(f'{full_prefix}"{new_version}"')
+            upgraded_any = True
+
+        last_end = m.end()
+
+    # Remainder
+    result_parts.append(original[last_end:])
+
+    if upgraded_any:
+        modified = "".join(result_parts)
+
+    return modified, upgraded_any
 
 
-# -------------------------
-# Library Upgrade UI
-# -------------------------
+# ---------------------------------------------------------------------
+# Main UI
+# ---------------------------------------------------------------------
 
 class LibraryUpgradeContent(VerticalScroll):
 
@@ -70,88 +102,59 @@ class LibraryUpgradeContent(VerticalScroll):
     def app(self) -> "ContentRouter":
         return super().app
 
+    # --------------------------------------------------------------
     def compose(self):
         yield Label("Library Upgrade Tool", classes="title")
 
         yield Button("Select Directory", id="pick_dir")
         yield Label(f"Directory: {self.root_dir}", id="dir_label")
 
-        yield Label("Group ID:")
-        yield Input(id="group_id")
-
-        yield Label("Artifact ID:")
-        yield Input(id="artifact_id")
-
-        yield Label("Upgrade To Version:")
-        yield Input(id="new_version")
+        yield Label("Libraries to upgrade (group:artifact:version):")
+        yield TextArea(
+            id="libs_input",
+            placeholder="org.mockito:mockito-core:6.1.2\norg.scalatest:scalatest:3.2.19",
+            text=""
+        )
 
         yield Checkbox("Only upgrade versions ≤ new version", id="version_threshold")
 
-        yield Button("Scan for Versions", id="scan")
         yield Button("Preview Upgrade", id="preview")
         yield Button("Apply Upgrade", id="apply")
 
-    # -------------------------
+    # --------------------------------------------------------------
     @on(Button.Pressed, "#pick_dir")
     @work
     async def pick_directory(self):
         directory = await self.app.push_screen_wait(SelectDirectory())
-        lbl = self.query_one("#dir_label", Label)
-
         if directory:
             self.root_dir = directory
-            lbl.update(f"Directory: {directory}")
+            self.query_one("#dir_label", Label).update(f"Directory: {directory}")
 
-    # -------------------------
-    @on(Button.Pressed, "#scan")
-    @work
-    async def scan_versions(self):
-        if not self.root_dir:
-            self.app.notify("Select directory first.", severity="warning")
-            return
+    # --------------------------------------------------------------
+    def parse_libraries(self) -> list[dict]:
+        raw = self.query_one("#libs_input", TextArea).text
+        libs = []
 
-        group = self.query_one("#group_id", Input).value.strip()
-        artifact = self.query_one("#artifact_id", Input).value.strip()
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(":")
+            if len(parts) != 3:
+                self.app.notify(f"Invalid format: {line}", severity="warning")
+                continue
 
-        if not group or not artifact:
-            self.app.notify("Group and Artifact required.", severity="warning")
-            return
+            group, artifact, version = parts
+            libs.append({
+                "group": group.strip(),
+                "artifact": artifact.strip(),
+                "version": version.strip(),
+                "version_tuple": parse_version(version.strip())
+            })
 
-        versions: Dict[str, int] = {}
+        return libs
 
-        for subdir, _, files in os.walk(self.root_dir):
-            for fn in files:
-                if not (fn.endswith(".scala") or fn.endswith(".sbt")):
-                    continue
-
-                path = os.path.join(subdir, fn)
-
-                try:
-                    content = open(path, "r", encoding="utf-8").read()
-                except:
-                    continue
-
-                tokens = tokenize(content)
-
-                for i in range(len(tokens) - 4):
-                    if (
-                        tokens[i] == f"\"{group}\""
-                        and tokens[i+1] == "%"
-                        and tokens[i+2] == f"\"{artifact}\""
-                        and tokens[i+3] == "%"
-                    ):
-                        ver = tokens[i+4].strip('"')
-                        versions[ver] = versions.get(ver, 0) + 1
-
-        from .json_render import JsonRender
-        self.app.show_in_content({
-            "directory": self.root_dir,
-            "group": group,
-            "artifact": artifact,
-            "versions_found": versions,
-        })
-
-    # -------------------------
+    # --------------------------------------------------------------
     @on(Button.Pressed, "#preview")
     @work
     async def preview(self):
@@ -162,59 +165,47 @@ class LibraryUpgradeContent(VerticalScroll):
     async def apply(self):
         await self._upgrade(preview=False)
 
-    # -------------------------
-
+    # --------------------------------------------------------------
     async def _upgrade(self, preview: bool):
         if not self.root_dir:
-            self.app.notify("Select directory first.", severity="warning")
+            self.app.notify("Select a directory first.", severity="warning")
             return
 
-        group = self.query_one("#group_id", Input).value.strip()
-        artifact = self.query_one("#artifact_id", Input).value.strip()
-        new_version = self.query_one("#new_version", Input).value.strip()
+        libs = self.parse_libraries()
+        if not libs:
+            self.app.notify("Enter at least one library.", severity="warning")
+            return
+
         threshold_enabled = self.query_one("#version_threshold", Checkbox).value
-
-        if not group or not artifact or not new_version:
-            self.app.notify("Group, Artifact, New Version required.", severity="warning")
-            return
-
-        new_version_tuple = parse_version(new_version)
-        new_token = f"\"{new_version}\""
 
         diff_map: Dict[str, str] = {}
         writes: List[tuple[str, str]] = []
 
+        # Traverse files
         for subdir, _, files in os.walk(self.root_dir):
             for fn in files:
                 if not (fn.endswith(".scala") or fn.endswith(".sbt")):
                     continue
 
                 path = os.path.join(subdir, fn)
-
                 try:
                     original = open(path, "r", encoding="utf-8").read()
                 except:
                     continue
 
-                tokens = tokenize(original)
                 modified = original
                 upgraded = False
 
-                for i in range(len(tokens) - 4):
-                    if (
-                        tokens[i] == f"\"{group}\""
-                        and tokens[i+1] == "%"
-                        and tokens[i+2] == f"\"{artifact}\""
-                        and tokens[i+3] == "%"
-                    ):
-                        old_tok = tokens[i+4]
-                        old_ver = old_tok.strip('"')
-                        old_tuple = parse_version(old_ver)
-
-                        if threshold_enabled and old_tuple > new_version_tuple:
-                            continue
-
-                        modified = modified.replace(old_tok, new_token)
+                # Apply each library's upgrade
+                for lib in libs:
+                    modified, changed = lossless_upgrade(
+                        modified,
+                        lib["group"],
+                        lib["artifact"],
+                        lib["version"],
+                        threshold_enabled
+                    )
+                    if changed:
                         upgraded = True
 
                 if not upgraded:
@@ -227,12 +218,13 @@ class LibraryUpgradeContent(VerticalScroll):
                         original.splitlines(),
                         modified.splitlines(),
                         fromfile=relative,
-                        tofile=f"{relative} (modified)",
+                        tofile=f"{relative} (modified)"
                     ))
                     diff_map[relative] = diff
                 else:
                     writes.append((path, modified))
 
+        # PREVIEW
         if preview:
             if not diff_map:
                 self.app.notify("No changes detected.", severity="warning")
@@ -241,11 +233,9 @@ class LibraryUpgradeContent(VerticalScroll):
             self.app.show_in_content(MultiFileDiffViewer(diff_map))
             return
 
+        # APPLY
         for path, content in writes:
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(content)
-            except:
-                pass
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
 
         self.app.notify(f"Applied changes to {len(writes)} files.", severity="success")
