@@ -10,6 +10,9 @@ from content.settings import SettingsContent
 
 from config import YAMLConfig
 from content import HomeContent
+from pathlib import Path
+
+PROJECT_ROOT = (Path(__file__)).parent.resolve()  # go up as needed
 
 
 class MainContent(Container):
@@ -20,7 +23,7 @@ class MainContent(Container):
 
 
 class SidebarApp(App):
-    CSS_PATH = "./content/styles.css"
+    CSS_PATH = PROJECT_ROOT / "content" / "styles.css"
 
     def compose(self) -> ComposeResult:
         with Vertical(id="sidebar"):
